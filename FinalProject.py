@@ -8,7 +8,7 @@ import time
 import random
 
 
-# اتصال به دیتابیس
+# اتصال به دیتابیس.
 def get_database_connection():
     return psycopg2.connect(
         host="localhost",
