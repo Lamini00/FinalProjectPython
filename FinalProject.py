@@ -4,6 +4,8 @@ import requests
 import psycopg2
 import re
 from datetime import datetime
+import time
+import random
 
 
 # اتصال به دیتابیس
@@ -22,14 +24,14 @@ def extract_number(value):
     return float(match.group()) if match else None
 
 
-def extract_size(value):
-    match = re.search(r"[\d\.]+×[\d\.]+×[\d\.]+", value)
-    return match.group() if match else None
+def extract_size(text):
+    result = re.sub(r'\s*میلی‌?متر\s*', '', text)
+    return result
 
+def extract_pixel(text):
+    result = re.sub(r"\s*\|.*", "", text)
+    return result
 
-def extract_pixel(value):
-    match = re.search(r"(\d+x\d+)", value)
-    return match.group() if match else None
 
 
 def extract_battery(value):
@@ -38,12 +40,12 @@ def extract_battery(value):
 
 
 # دریافت لیست شناسه محصولات موبایل سامسونگ
-def fetch_product_ids():
+def fetch_product_ids(max_pages=5):
     base_url = "https://api.digikala.com/v1/categories/mobile-phone/brands/samsung/search/"
     page = 1
     product_ids = []
 
-    while True:
+    while page <= max_pages:
         try:
             # درخواست به API
             response = requests.get(f"{base_url}?page={page}")
@@ -53,15 +55,12 @@ def fetch_product_ids():
 
             # بررسی داده‌های بازگشتی
             data = response.json()
-            # print(data)
             products = data.get("data", {}).get("products", [])
-            # print(products)
             if not products:
-                break  # اگر لیستی نباشد، صفحه‌های API پایان‌یافته‌اند
+                break
 
             # اضافه کردن شناسه محصولات به لیست
             product_ids.extend(product.get("id") for product in products if product.get("id") is not None)
-            #print(f"Page {page}: {len(products)} products fetched.")
 
             # رفتن به صفحه بعد
             page += 1
@@ -71,8 +70,6 @@ def fetch_product_ids():
             break
 
     print(f"Total product IDs fetched: {len(product_ids)}")
-    #print("product_ids id: ")
-    #print(product_ids)
     return product_ids
 
 
@@ -90,13 +87,8 @@ def fetch_result(product_id):
 
 def fetch_product_info(product_id):
     data1 = fetch_result(product_id)
-    #print(" the data1 is: ")
-    #print(data1)
-    #print(type(data1))
     data = data1.get("data")
     product = data.get("product")
-    #print("product is: ")
-    #print(product)
     return product
 
 
@@ -104,11 +96,14 @@ def fetch_price(id):
     product_Info = fetch_product_info(id)
     aa = product_Info.get("properties")
     min_price_in_last_month = aa.get("min_price_in_last_month")
-    #print("min_price_in_last_month:", min_price_in_last_month)
-    if not min_price_in_last_month:
-        print(f"Key 'min_price_in_last_month' is missing or None for product ID {id}")
-    if min_price_in_last_month is None:
-        raise ValueError("Key 'price' not found in 'min_price_in_last_month'")
+    print("min_price_in_last_month:", min_price_in_last_month)
+    try:
+        if not min_price_in_last_month:
+            print(f"Key 'min_price_in_last_month' is missing or None for product ID {id}")
+        if min_price_in_last_month is None:
+            raise ValueError("Key 'price' not found in 'min_price_in_last_month'")
+    except Exception as e:
+        print(f"Error occurred: {e}")
     return min_price_in_last_month
 
 
@@ -116,10 +111,8 @@ def fetch_price(id):
 
 def fetch_model(id):
     productInfo = fetch_product_info(id)
-    #print("productInfo in model methode is: ")
-    #print(productInfo)
     model = productInfo.get("title_en", None)
-    #print("model: ", model)
+    print("model: ", model)
     return model
 
 
@@ -127,8 +120,6 @@ def fetch_model(id):
     # استخراج سایز
 def fetch_size(id):
     productInfo = fetch_product_info(id)
-    #print("productInfo in size methode is: ")
-    #print(productInfo)
     specifications = productInfo.get("specifications", [])
     size = None
     for spec in specifications:
@@ -140,7 +131,7 @@ def fetch_size(id):
                     size = extract_size(size)
                     break
             break
-    #print("size: ", size)
+    print("size: ", size)
     return size
 
     # دسترسی به مقدار وزن
@@ -157,7 +148,7 @@ def fetch_weight(id):
                     weight = extract_number(weight)
                     break
             break
-    #print("weight:", weight)
+    print("weight:", weight)
     return weight
 
 
@@ -174,11 +165,11 @@ def fetch_pixel(id):
                 attribute_title = str(attribute.get("title", ""))
                 if re.search(pattern, attribute_title):  # بررسی تطابق عنوان با الگوی Regex
                     pixel = attribute.get("values", [None])[0]
-                    if pixel:  # اگر مقدار وجود داشت
+                    if pixel:
                         pixel = extract_pixel(pixel)
                     break
             break
-    #print("pixel:", pixel)
+    print("pixel:", pixel)
     return pixel
 
 
@@ -191,15 +182,16 @@ def fetch_battery(id):
         if spec.get("title") == "سایر مشخصات":
             attributes = spec.get("attributes", [])
             for attribute in attributes:
-                if attribute.get("title") == "ظرفیت باتری":
+                if (attribute.get("title") == "مشخصات باتری" or attribute.get("title") == "ظرفیت باتری"):
                     battery = attribute.get("values", [None])[0]
                     battery = extract_battery(battery)
                     break
             break
-    #print("battery:", battery)
+    print("battery3:", battery)
     return battery
 
-# دسترسی به حافظه داخلی
+    # دسترسی به حافظه داخلی
+
 def fetch_internal_memory(id):
     productInfo = fetch_product_info(id)
     specifications = productInfo.get("specifications", [])
@@ -216,7 +208,7 @@ def fetch_internal_memory(id):
                         internal_memory = "unknown"  # مقدار پیش‌فرض در صورت None
                     break
             break
-    #print("internal_memory:", internal_memory)
+    print("internal_memory:", internal_memory)
     return internal_memory
 
     # دسترسی به رم
@@ -236,7 +228,7 @@ def fetch_ram(id):
                         ram = "unknown"  # مقدار پیش‌فرض در صورت None
                     break
             break
-    #print("ram:", ram)
+    print("ram:", ram)
     return ram
 
 # دسترسی به cpu
@@ -256,7 +248,7 @@ def fetch_cpu(id):
                         cpu = "unknown"  # مقدار پیش‌فرض در صورت None
                     break
             break
-    #print("cpu:", cpu)
+    print("cpu:", cpu)
     return cpu
 
 
@@ -278,7 +270,7 @@ def fetch_main_camera_resolution(id):
                     break
 
             break
-    #print("main_camera_resolution:", main_camera_resolution)
+    print("main_camera_resolution:", main_camera_resolution)
     return main_camera_resolution
 
 
@@ -293,21 +285,22 @@ def fetch_ict(id):
             for attribute in attributes:
                 if attribute.get("title") == "شبکه‌های مخابراتی":
                     ict_network = attribute.get("values", [None])
-                    #print("ict_network:", ict_network)
                     for element in ict_network:
                         if element.strip() == "5G":
                             ict = True
                             break
                 break
             break
-    #print("ict:", ict)
+    print("ict:", ict)
     return ict
 
 
 # ذخیره  جزییات به صورت تاپل
-def fetch_product_detail(product_ids):
+def fetch_product_detail(product_ids, max_products=40):
     product_detail = {}  # مقداردهی اولیه
-    for id in product_ids:
+    # فقط (40 محصول اول) محصولات موجود پردازش می شوند
+    limited_product_ids = product_ids[:max_products]
+    for id in limited_product_ids:
         selling_price = fetch_price(id)
         model = fetch_model(id)
         size = fetch_size(id)
@@ -321,21 +314,21 @@ def fetch_product_detail(product_ids):
         ict = fetch_ict(id)
         product_detail[id] = (selling_price, model, size, weight, pixel, battery, internal_memory, ram, cpu,
                                   main_camera_resolution, ict)  # افزودن تاپل
-        print("product_detail in fetch_product_detail methode is: ")
-        print(product_detail)
+        print("product_detail in fetch_product_detail methode is: ", product_detail)
+        delay = random.uniform(1, 3)  # تأخیر بین 1 تا 3 ثانیه به‌صورت تصادفی
+        time.sleep(delay)
     return product_detail
 
 
 
-# درج داده‌ها در جدول
-
+#درج داده ها در جدول دیجی کالا
 def insert_product_data(product_detail):
     connection = get_database_connection()
     cursor = connection.cursor()
     for product_id, value in product_detail.items():
         try:
             cursor.execute("""
-                            INSERT INTO products (
+                            INSERT INTO digipro (
                                 id, price, model, size, weight, pixel, battery, internal_memory, ram, cpu, main_camera_resolution, ict, created_at, updated_at
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             ON CONFLICT (id) DO UPDATE SET
@@ -378,24 +371,18 @@ def insert_product_data(product_detail):
 
 
 def main():
-    product_ids = []
-    price = {}
     try:
         print("Start methode of: fetch_product_ids")
         product_ids = fetch_product_ids()
-        print(" the end of methode: fetch_product_ids")
         print(product_ids)
         print("Start methode of: fetch_product_detail")
         product_Information = fetch_product_detail(product_ids)
-        print(" the end of methode: fetch_product_detail")
-        print(product_Information)
         print("start method of: insert_product_data")
         insert_product_data(product_Information)
-        print(" the end of methode: insert_product_data")
     except Exception as e:
         print(f"Error occurred: {e}")
 
-#The End!!vsffggfd
+
 if __name__ == "__main__":
     main()
 
